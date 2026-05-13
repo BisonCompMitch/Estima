@@ -13,14 +13,13 @@ def main() -> None:
         print("  pip install -r requirements.txt")
         sys.exit(1)
 
-    print("BisonScope web server starting…")
-    print("Open http://127.0.0.1:8000 in your browser.")
-    uvicorn.run(
-        "web.app:app",
-        host="127.0.0.1",
-        port=8000,
-        reload=False,
-    )
+    import os
+    host = "0.0.0.0"
+    port = int(os.environ.get("PORT", 8000))
+    print(f"BisonScope web server starting on {host}:{port}")
+    if port == 8000:
+        print("Open http://127.0.0.1:8000 in your browser.")
+    uvicorn.run("web.app:app", host=host, port=port, reload=False)
 
 
 if __name__ == "__main__":
