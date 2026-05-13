@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BisonScope — CFS Estimator</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+
+<body>
+<div class="app-shell">
+
+  <!-- ── Left panel ──────────────────────────────────────────────────────── -->
+  <aside class="left-panel">
+
+    <!-- Brand -->
+    <div class="brand-bar">
+      <div class="logo-dot"></div>
+      <div>
+        <div class="brand-name">BisonScope</div>
+        <div class="brand-sub">Cold-formed steel estimator</div>
+      </div>
+    </div>
+
+    <!-- Drop zone -->
+    <div id="dropZone" class="drop-zone">
+      <input type="file" id="fileInput" accept=".ifc,.dxf" />
+      <div class="drop-icon">↑</div>
+      <p id="dropLabel" class="drop-label">Drop .ifc or .dxf here, or click to browse</p>
+    </div>
+
+    <!-- Cost rates -->
+    <div class="panel">
+      <div class="rate-grid">
+        <label>
+          <span class="label-text">Area rate ($/sq ft)</span>
+          <input type="number" id="costPerSqFt" value="40" min="0" step="0.5" />
+        </label>
+        <label>
+          <span class="label-text">Linear rate ($/linear ft)</span>
+          <input type="number" id="costPerLinearFt" value="2.50" min="0" step="0.25" />
+        </label>
+        <label>
+          <span class="label-text">Source unit</span>
+          <select id="unitSelect">
+            <option value="">Auto-detect</option>
+            <option value="ft">Feet</option>
+            <option value="m">Meters</option>
+            <option value="in">Inches</option>
+            <option value="mm">Millimeters</option>
+            <option value="cm">Centimeters</option>
+          </select>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="strictMode" />
+          <span>
+            <strong>Strict mode</strong>
+            <small>Authored quantities only — no geometry fallbacks</small>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="btn-row single">
+      <button class="btn btn-primary" id="estimateBtn" disabled>Run Estimate</button>
+    </div>
+
+    <!-- Results -->
+    <div id="resultArea" class="hidden">
+      <div class="result-grid">
+        <div class="result-card">
+          <div class="result-card-label">Area-based</div>
+          <div class="result-card-value" id="rAreaCost">—</div>
+          <div class="result-card-sub" id="rAreaSqft">— sq ft</div>
+        </div>
+        <div class="result-card">
+          <div class="result-card-label">Linear-based</div>
+          <div class="result-card-value" id="rLinearCost">—</div>
+          <div class="result-card-sub" id="rLinearFt">— linear ft</div>
+        </div>
+      </div>
+      <div class="conf-row">
+        <span class="conf-badge" id="rConfBadge">—</span>
+        <div class="conf-actions">
+          <button class="btn-link" id="detailsToggle">Details ▾</button>
+          <button class="btn-link" id="exportBtn">Export JSON</button>
+        </div>
+      </div>
+      <div id="detailsBody" class="hidden">
+        <table class="detail-table">
+          <tr><td>CFS elements</td>  <td id="dElements">—</td></tr>
+          <tr><td>Area source</td>   <td id="dAreaBasis" class="mono-sm">—</td></tr>
+          <tr><td>Linear source</td> <td id="dLinearBasis" class="mono-sm">—</td></tr>
+          <tr><td>File unit</td>     <td id="dUnit">—</td></tr>
+        </table>
+        <div id="dWarnings" class="warn-box hidden"></div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <p id="statusText" class="status-text">Drop a file to start.</p>
+
+  </aside>
+
+  <!-- ── Viewer ─────────────────────────────────────────────────────────── -->
+  <div class="viewer-panel">
+    <div class="viewer-header">3D Preview</div>
+    <div id="viewerContainer"></div>
+  </div>
+
+</div>
+
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

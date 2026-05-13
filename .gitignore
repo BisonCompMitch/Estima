@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# Logs & temp
+server.log
+nohup.out
+*.log
+
+# Claude Code
+.claude/
+
+# Desktop app files (not part of web)
+BisonScopeV2.py
+BisonScopeV3.py
+estimate.py
+bisonscope_v2_rules.json
+Icon.png
+TitleIcon.png
+bison_scope_estimator/gui.py
+bison_scope_estimator/gui_v2.py
+bison_scope_estimator/gui_v3.py
+bison_scope_estimator/preview3d.py
+bison_scope_estimator/preview_v3.py
+bison_scope_estimator/v2_engine.py
+
+# OS
+.DS_Store
+Thumbs.db
