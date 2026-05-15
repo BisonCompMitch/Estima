@@ -64,19 +64,11 @@ html, body {
   border-radius: 8px;
 }
 
-.logo-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
+.brand-logo {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
   flex-shrink: 0;
-  animation: pulse 2.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.55; transform: scale(0.85); }
 }
 
 .brand-name {
