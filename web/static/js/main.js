@@ -24,6 +24,17 @@ const detailsToggle = document.getElementById("detailsToggle");
 const detailsBody   = document.getElementById("detailsBody");
 const exportBtn     = document.getElementById("exportBtn");
 const viewerWrap    = document.getElementById("viewerContainer");
+const routeBanner   = document.getElementById("routeBanner");
+
+const isCreateEstimateRoute = window.location.pathname.replace(/\/+$/, "") === "/create-estimate";
+
+if (routeBanner) {
+  routeBanner.classList.toggle("hidden", !isCreateEstimateRoute);
+}
+
+document.title = isCreateEstimateRoute
+  ? "BisonScope — Create Estimate"
+  : "BisonScope — CFS Estimator";
 
 // ── init viewer ────────────────────────────────────────────────────────────
 viewer = new BisonViewer(viewerWrap);
@@ -54,8 +65,8 @@ fileInput.addEventListener("change", () => {
 
 function handleFile(f) {
   const ext = f.name.split(".").pop().toLowerCase();
-  if (ext !== "ifc" && ext !== "dxf") {
-    setStatus("Unsupported file. Use .ifc or .dxf", true);
+  if (ext !== "ifc") {
+    setStatus("Unsupported file. Use .ifc", true);
     return;
   }
   currentFile = f;
