@@ -65,10 +65,13 @@ html, body {
 }
 
 .brand-logo {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
+  max-width: 36px;
+  max-height: 36px;
   object-fit: contain;
   flex-shrink: 0;
+  flex-grow: 0;
 }
 
 .brand-name {
