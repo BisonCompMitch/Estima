@@ -187,10 +187,12 @@ def _hull_walls_only(
 ) -> "tuple[float, list]":
     """
     Fallback for models without IfcWall elements (e.g. CFS IfcMember).
-    Computes exterior wall area as convex-hull perimeter × building height.
+    Rasterizes the building footprint and traces exact boundary edges so
+    non-convex shapes (L, U, T, etc.) are measured correctly.
     No roof area included — matches user spec of wall-face-only.
     """
     import numpy as np
+    from collections import defaultdict
 
     if not shell_verts_flat:
         return 0.0, []
@@ -199,8 +201,8 @@ def _hull_walls_only(
     if len(pts) < 3:
         return 0.0, []
 
-    if len(pts) > 20_000:
-        step = len(pts) // 20_000 + 1
+    if len(pts) > 50_000:
+        step = len(pts) // 50_000 + 1
         pts = pts[::step]
 
     z_min = float(bmin[2]) if math.isfinite(bmin[2]) else float(pts[:, 2].min())
@@ -209,34 +211,95 @@ def _hull_walls_only(
     if height < 1e-9:
         return 0.0, []
 
-    hull = _convex_hull_2d(pts[:, :2])
-    n = len(hull)
-    if n < 3:
-        return 0.0, []
+    xs, ys = pts[:, 0], pts[:, 1]
+    x_min = float(xs.min())
+    y_min = float(ys.min())
+    x_span = float(xs.max()) - x_min
+    y_span = float(ys.max()) - y_min
+
+    # ~0.3 m cells; scale up if footprint is huge
+    resolution = 0.3
+    footprint_area = x_span * y_span
+    if footprint_area > 0 and footprint_area / (resolution * resolution) > 200_000:
+        resolution = math.sqrt(footprint_area / 200_000)
+
+    nx = max(2, int(x_span / resolution) + 2)
+    ny = max(2, int(y_span / resolution) + 2)
+
+    grid = np.zeros((nx, ny), dtype=bool)
+    ix = np.clip(((xs - x_min) / resolution).astype(int), 0, nx - 1)
+    iy = np.clip(((ys - y_min) / resolution).astype(int), 0, ny - 1)
+    grid[ix, iy] = True
+
+    # Collect boundary half-edges, keyed by (fixed_coord, orientation)
+    # vert_edges  : x-fixed faces (right/left)  → list of y-intervals
+    # horiz_edges : y-fixed faces (top/bottom)   → list of x-intervals
+    vert_edges: dict  = defaultdict(list)
+    horiz_edges: dict = defaultdict(list)
+
+    occ_i, occ_j = np.where(grid)
+    for i, j in zip(occ_i.tolist(), occ_j.tolist()):
+        x0 = x_min + i * resolution
+        y0 = y_min + j * resolution
+
+        if i + 1 >= nx or not grid[i + 1, j]:
+            vert_edges[(round(x0 + resolution, 9), +1)].append((y0, y0 + resolution))
+        if i == 0 or not grid[i - 1, j]:
+            vert_edges[(round(x0, 9), -1)].append((y0, y0 + resolution))
+        if j + 1 >= ny or not grid[i, j + 1]:
+            horiz_edges[(round(y0 + resolution, 9), +1)].append((x0, x0 + resolution))
+        if j == 0 or not grid[i, j - 1]:
+            horiz_edges[(round(y0, 9), -1)].append((x0, x0 + resolution))
+
+    def _merge(intervals: list) -> list:
+        if not intervals:
+            return []
+        segs = sorted(intervals)
+        merged = [list(segs[0])]
+        for s, e in segs[1:]:
+            if s <= merged[-1][1] + 1e-9:
+                merged[-1][1] = max(merged[-1][1], e)
+            else:
+                merged.append([s, e])
+        return merged
 
     planes: list = []
     total_native = 0.0
+    pid = 0
 
-    for i in range(n):
-        p0, p1 = hull[i], hull[(i + 1) % n]
-        edge_len = math.sqrt((p1[0] - p0[0]) ** 2 + (p1[1] - p0[1]) ** 2)
-        if edge_len < 1e-9:
-            continue
-        panel_native = edge_len * height
-        total_native += panel_native
-        w_sqft = panel_native * area_scale
-        planes.append({
-            "id": f"hull_wall_{i}",
-            "type": "wall",
-            "area_sqft": round(w_sqft, 2),
-            "verts": [
-                p0[0], p0[1], z_min,
-                p1[0], p1[1], z_min,
-                p1[0], p1[1], z_max,
-                p0[0], p0[1], z_max,
-            ],
-            "faces": [0, 1, 2, 0, 2, 3],
-        })
+    for (x_face, _), intervals in vert_edges.items():
+        for y_s, y_e in _merge(intervals):
+            edge_len = y_e - y_s
+            if edge_len < 1e-9:
+                continue
+            native = edge_len * height
+            total_native += native
+            planes.append({
+                "id": f"gs_{pid}",
+                "type": "wall",
+                "area_sqft": round(native * area_scale, 2),
+                "verts": [x_face, y_s, z_min, x_face, y_e, z_min,
+                          x_face, y_e, z_max, x_face, y_s, z_max],
+                "faces": [0, 1, 2, 0, 2, 3],
+            })
+            pid += 1
+
+    for (y_face, _), intervals in horiz_edges.items():
+        for x_s, x_e in _merge(intervals):
+            edge_len = x_e - x_s
+            if edge_len < 1e-9:
+                continue
+            native = edge_len * height
+            total_native += native
+            planes.append({
+                "id": f"gs_{pid}",
+                "type": "wall",
+                "area_sqft": round(native * area_scale, 2),
+                "verts": [x_s, y_face, z_min, x_e, y_face, z_min,
+                          x_e, y_face, z_max, x_s, y_face, z_max],
+                "faces": [0, 1, 2, 0, 2, 3],
+            })
+            pid += 1
 
     return round(total_native * area_scale, 1), planes
 
