@@ -254,18 +254,25 @@ def _hull_walls_only(
         if cj == 0 or not occupied[ci, cj - 1]:
             horiz_segs[(round(y0, 9), -1)].append((x0, x0 + resolution, zt))
 
-    def _merge_zt(segs: list) -> list:
-        """Merge adjacent collinear segments that share the same ceiling height (±0.1 m)."""
+    def _merge_runs(segs: list) -> list:
+        """
+        Merge ALL adjacent collinear boundary segments into continuous wall runs.
+        Tracks per-endpoint z_top so each run becomes a trapezoid when height
+        varies.  Splits only at gaps or architectural height steps > 2 m
+        (~one storey), preserving genuine building step-downs.
+        Returns: [[along_start, along_end, zt_start, zt_end], ...]
+        """
         if not segs:
             return []
         ordered = sorted(segs, key=lambda s: s[0])
-        merged = [list(ordered[0])]
+        merged = [[ordered[0][0], ordered[0][1], ordered[0][2], ordered[0][2]]]
         for s, e, zt in ordered[1:]:
             prev = merged[-1]
-            if s <= prev[1] + 1e-9 and abs(zt - prev[2]) <= 0.1:
+            if s <= prev[1] + 1e-9 and abs(zt - prev[3]) <= 2.0:
                 prev[1] = max(prev[1], e)
+                prev[3] = zt
             else:
-                merged.append([s, e, zt])
+                merged.append([s, e, zt, zt])
         return merged
 
     planes: list = []
@@ -273,37 +280,43 @@ def _hull_walls_only(
     pid = 0
 
     for (x_face, _), segs in vert_segs.items():
-        for y_s, y_e, zt in _merge_zt(segs):
+        for y_s, y_e, zt_s, zt_e in _merge_runs(segs):
             edge_len = y_e - y_s
-            h = zt - z_floor
-            if edge_len < 1e-9 or h < 0.1:
+            h_s = max(0.0, zt_s - z_floor)
+            h_e = max(0.0, zt_e - z_floor)
+            if edge_len < 1e-9 or max(h_s, h_e) < 0.1:
                 continue
-            native = edge_len * h
+            native = edge_len * (h_s + h_e) * 0.5
             total_native += native
             planes.append({
                 "id": f"gs_{pid}",
                 "type": "wall",
                 "area_sqft": round(native * area_scale, 2),
-                "verts": [x_face, y_s, z_floor, x_face, y_e, z_floor,
-                          x_face, y_e, zt,       x_face, y_s, zt],
+                "verts": [x_face, y_s, z_floor,
+                          x_face, y_e, z_floor,
+                          x_face, y_e, zt_e,
+                          x_face, y_s, zt_s],
                 "faces": [0, 1, 2, 0, 2, 3],
             })
             pid += 1
 
     for (y_face, _), segs in horiz_segs.items():
-        for x_s, x_e, zt in _merge_zt(segs):
+        for x_s, x_e, zt_s, zt_e in _merge_runs(segs):
             edge_len = x_e - x_s
-            h = zt - z_floor
-            if edge_len < 1e-9 or h < 0.1:
+            h_s = max(0.0, zt_s - z_floor)
+            h_e = max(0.0, zt_e - z_floor)
+            if edge_len < 1e-9 or max(h_s, h_e) < 0.1:
                 continue
-            native = edge_len * h
+            native = edge_len * (h_s + h_e) * 0.5
             total_native += native
             planes.append({
                 "id": f"gs_{pid}",
                 "type": "wall",
                 "area_sqft": round(native * area_scale, 2),
-                "verts": [x_s, y_face, z_floor, x_e, y_face, z_floor,
-                          x_e, y_face, zt,       x_s, y_face, zt],
+                "verts": [x_s, y_face, z_floor,
+                          x_e, y_face, z_floor,
+                          x_e, y_face, zt_e,
+                          x_s, y_face, zt_s],
                 "faces": [0, 1, 2, 0, 2, 3],
             })
             pid += 1
