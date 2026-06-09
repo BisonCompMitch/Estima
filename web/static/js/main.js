@@ -140,7 +140,7 @@ async function loadPreview() {
     viewer.setSurfacesVisible(false);
     deletePlanesRow?.classList.add("hidden");
     if (deletePlanesBtn) { deletePlanesBtn.disabled = true; deletePlanesBtn.textContent = "Delete Selected"; }
-    if (baseSurfaceArea > 0 && surfaceAreaSection) {
+    if (payload.type === "ifc" && surfaceAreaSection) {
       surfaceAreaSection.classList.remove("hidden");
       updateSurfaceArea();
     } else if (surfaceAreaSection) {
