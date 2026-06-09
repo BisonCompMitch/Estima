@@ -5,9 +5,11 @@
 import { BisonViewer } from "./viewer3d.js";
 
 // ── state ──────────────────────────────────────────────────────────────────
-let viewer      = null;
-let currentFile = null;
-let lastResult  = null;
+let viewer             = null;
+let currentFile        = null;
+let lastResult         = null;
+let baseSurfaceArea    = 0;
+let removedSurfaceArea = 0;
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const dropZone      = document.getElementById("dropZone");
@@ -23,8 +25,13 @@ const resultArea    = document.getElementById("resultArea");
 const detailsToggle = document.getElementById("detailsToggle");
 const detailsBody   = document.getElementById("detailsBody");
 const exportBtn     = document.getElementById("exportBtn");
-const viewerWrap    = document.getElementById("viewerContainer");
-const routeBanner   = document.getElementById("routeBanner");
+const viewerWrap        = document.getElementById("viewerContainer");
+const routeBanner       = document.getElementById("routeBanner");
+const surfaceAreaSection = document.getElementById("surfaceAreaSection");
+const rSurfaceArea       = document.getElementById("rSurfaceArea");
+const surfaceToggle      = document.getElementById("surfaceToggle");
+const deletePlanesRow    = document.getElementById("deletePlanesRow");
+const deletePlanesBtn    = document.getElementById("deletePlanesBtn");
 
 const isCreateEstimateRoute = window.location.pathname.replace(/\/+$/, "") === "/create-estimate";
 
@@ -38,6 +45,34 @@ document.title = isCreateEstimateRoute
 
 // ── init viewer ────────────────────────────────────────────────────────────
 viewer = new BisonViewer(viewerWrap);
+
+viewer.onSurfaceClick = ({ selectedCount }) => {
+  if (deletePlanesBtn) {
+    deletePlanesBtn.disabled = selectedCount === 0;
+    deletePlanesBtn.textContent = selectedCount > 0
+      ? `Delete ${selectedCount} Plane${selectedCount > 1 ? "s" : ""}`
+      : "Delete Selected";
+  }
+};
+
+surfaceToggle?.addEventListener("click", () => {
+  const isOn = surfaceToggle.dataset.on === "true";
+  const next = !isOn;
+  surfaceToggle.dataset.on = next;
+  surfaceToggle.textContent = next ? "Hide Surfaces" : "Show Surfaces";
+  viewer.setSurfacesVisible(next);
+  deletePlanesRow?.classList.toggle("hidden", !next);
+});
+
+deletePlanesBtn?.addEventListener("click", () => {
+  const removed = viewer.deleteSelectedPlanes();
+  removedSurfaceArea += removed;
+  updateSurfaceArea();
+  if (deletePlanesBtn) {
+    deletePlanesBtn.disabled = true;
+    deletePlanesBtn.textContent = "Delete Selected";
+  }
+});
 
 // ── drag-and-drop ──────────────────────────────────────────────────────────
 dropZone.addEventListener("click", () => fileInput.click());
@@ -81,6 +116,11 @@ estimateBtn.addEventListener("click", runEstimate);
 detailsToggle?.addEventListener("click", toggleDetails);
 exportBtn?.addEventListener("click", exportJson);
 
+function updateSurfaceArea() {
+  const area = Math.max(0, baseSurfaceArea - removedSurfaceArea);
+  if (rSurfaceArea) rSurfaceArea.textContent = `${fmt(area)} sq ft`;
+}
+
 async function loadPreview() {
   if (!currentFile) return;
 
@@ -92,6 +132,21 @@ async function loadPreview() {
     if (!res.ok) throw new Error(payload.detail || "Preview failed.");
 
     const info = viewer.loadGeometry(payload);
+
+    baseSurfaceArea    = payload.external_surface_sqft || 0;
+    removedSurfaceArea = 0;
+    viewer.loadSurfacePlanes(payload.surface_planes || []);
+    if (surfaceToggle) { surfaceToggle.dataset.on = "false"; surfaceToggle.textContent = "Show Surfaces"; }
+    viewer.setSurfacesVisible(false);
+    deletePlanesRow?.classList.add("hidden");
+    if (deletePlanesBtn) { deletePlanesBtn.disabled = true; deletePlanesBtn.textContent = "Delete Selected"; }
+    if (baseSurfaceArea > 0 && surfaceAreaSection) {
+      surfaceAreaSection.classList.remove("hidden");
+      updateSurfaceArea();
+    } else if (surfaceAreaSection) {
+      surfaceAreaSection.classList.add("hidden");
+    }
+
     if (info.type === "dxf") {
       setStatus(`${currentFile.name} loaded.`);
     } else {

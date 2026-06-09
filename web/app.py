@@ -159,6 +159,16 @@ async def root() -> FileResponse:
     return FileResponse(str(_STATIC / "index.html"))
 
 
+@app.get("/create-estimate", include_in_schema=False)
+async def create_estimate() -> FileResponse:
+    return FileResponse(str(_STATIC / "index.html"))
+
+
+@app.get("/health", include_in_schema=False)
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.post("/api/estimate")
 async def estimate_endpoint(
     file: UploadFile = File(...),

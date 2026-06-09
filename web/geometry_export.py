@@ -35,6 +35,8 @@ from typing import Any
 
 _MAX_TOTAL_VERTS_IFC = 300_000   # cap to keep JSON response manageable
 _MAX_SEGMENTS_DXF = 100_000      # cap individual segment pairs
+_MAX_SURF_VERTS   = 120_000      # cap for surface-plane overlay geometry
+_SQ_M_TO_SQ_FT    = 10.7639104  # m² → sq ft
 
 _IFC_ELEMENT_COLORS: dict[str, str] = {
     "IfcWall":              "#6B7FA8",
@@ -54,6 +56,111 @@ _IFC_ELEMENT_COLORS: dict[str, str] = {
     "IfcFooting":           "#8B7355",
     "_default":             "#AAAAAA",
 }
+
+
+def _ifc_area_scale(ifc_file) -> float:
+    """Returns multiplier from (project length unit)^2 to sq ft."""
+    try:
+        for ua in ifc_file.by_type("IfcUnitAssignment"):
+            for u in (ua.Units or []):
+                if getattr(u, "UnitType", None) != "LENGTHUNIT":
+                    continue
+                utype = u.is_a()
+                if utype == "IfcSIUnit":
+                    prefix = getattr(u, "Prefix", None)
+                    if prefix == "MILLI":
+                        return _SQ_M_TO_SQ_FT * 1e-6
+                    if prefix == "CENTI":
+                        return _SQ_M_TO_SQ_FT * 1e-4
+                    return _SQ_M_TO_SQ_FT
+                if utype == "IfcConversionBasedUnit":
+                    name = (getattr(u, "Name", None) or "").upper()
+                    if "FOOT" in name or name in ("FT",):
+                        return 1.0
+                    if "INCH" in name:
+                        return 1.0 / 144.0
+                    return _SQ_M_TO_SQ_FT
+    except Exception:
+        pass
+    return _SQ_M_TO_SQ_FT
+
+
+def _is_external(element, ifc_elem) -> bool:
+    try:
+        for pset_data in ifc_elem.get_psets(element).values():
+            val = pset_data.get("IsExternal")
+            if val is True or val == 1:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _qto_area(element, ifc_elem) -> "float | None":
+    try:
+        for qto_data in ifc_elem.get_psets(element, qtos_only=True).values():
+            for key in ("NetSideArea", "GrossSideArea", "NetArea", "GrossArea"):
+                val = qto_data.get(key)
+                if val is not None:
+                    try:
+                        f = float(val)
+                        if f > 0:
+                            return f
+                    except (TypeError, ValueError):
+                        pass
+    except Exception:
+        pass
+    return None
+
+
+def _normal_filtered_area(verts: list, faces: list, plane_type: str) -> float:
+    """Geometric area in project units, normal-direction filtered.
+    Wall areas are halved to approximate single-face exterior area from solid mesh."""
+    area = 0.0
+    for i in range(0, len(faces) - 2, 3):
+        i0, i1, i2 = faces[i] * 3, faces[i + 1] * 3, faces[i + 2] * 3
+        ax, ay, az = verts[i0], verts[i0 + 1], verts[i0 + 2]
+        ux, uy, uz = verts[i1] - ax, verts[i1 + 1] - ay, verts[i1 + 2] - az
+        vx, vy, vz = verts[i2] - ax, verts[i2 + 1] - ay, verts[i2 + 2] - az
+        nx = uy * vz - uz * vy
+        ny = uz * vx - ux * vz
+        nz = ux * vy - uy * vx
+        length = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if length < 1e-12:
+            continue
+        nz_norm = nz / length
+        tri_area = length * 0.5
+        if plane_type == "wall" and abs(nz_norm) < 0.7:
+            area += tri_area * 0.5
+        elif plane_type == "roof" and nz_norm > 0.3:
+            area += tri_area
+    return area
+
+
+def _classify_surface_ids(ifc_file, ifc_elem) -> "dict[int, str]":
+    """Returns {entity_id: 'wall'|'roof'} for external surface candidates."""
+    result: dict[int, str] = {}
+    for el in ifc_file.by_type("IfcRoof"):
+        result[el.id()] = "roof"
+    for el in ifc_file.by_type("IfcSlab"):
+        ptype = getattr(el, "PredefinedType", None)
+        if isinstance(ptype, str) and ptype.upper() == "ROOF":
+            result[el.id()] = "roof"
+    wall_ids: set[int] = set()
+    all_walls = []
+    for wtype in ("IfcWall", "IfcWallStandardCase", "IfcCurtainWall"):
+        try:
+            for w in ifc_file.by_type(wtype):
+                if w.id() not in wall_ids:
+                    wall_ids.add(w.id())
+                    all_walls.append(w)
+        except Exception:
+            pass
+    ext_walls = [w for w in all_walls if _is_external(w, ifc_elem)]
+    target_walls = ext_walls if ext_walls else all_walls
+    for w in target_walls:
+        result[w.id()] = "wall"
+    return result
 
 
 # ── public entry point ────────────────────────────────────────────────────────
@@ -223,6 +330,7 @@ def _export_ifc(path: Path) -> dict[str, Any]:
     try:
         import ifcopenshell
         import ifcopenshell.geom as geom
+        import ifcopenshell.util.element as ifc_elem
     except ImportError:
         return {
             "type": "ifc",
@@ -230,16 +338,22 @@ def _export_ifc(path: Path) -> dict[str, Any]:
             "bounds": {"min": [0, 0, 0], "max": [1, 1, 1]},
             "element_types": {},
             "groups": {},
+            "surface_planes": [],
+            "external_surface_sqft": 0.0,
         }
 
     ifc_file = ifcopenshell.open(str(path))
+    area_scale = _ifc_area_scale(ifc_file)
+    surface_ids = _classify_surface_ids(ifc_file, ifc_elem)
 
     settings = geom.settings()
     settings.set("use-world-coords", True)
     settings.set("weld-vertices", True)
 
-    # Collect meshes grouped by IFC class, respecting total-vertex budget.
     groups: dict[str, dict[str, Any]] = {}
+    surface_planes: list[dict[str, Any]] = []
+    total_surf_sqft = 0.0
+    surf_verts_used = 0
     bmin = [math.inf, math.inf, math.inf]
     bmax = [-math.inf, -math.inf, -math.inf]
     total_verts = 0
@@ -259,7 +373,6 @@ def _export_ifc(path: Path) -> dict[str, Any]:
 
         etype = element.is_a()
         color = _ifc_color(etype)
-
         raw_verts = list(shape.geometry.verts)
         raw_faces = list(shape.geometry.faces)
 
@@ -289,6 +402,26 @@ def _export_ifc(path: Path) -> dict[str, Any]:
             if y > bmax[1]: bmax[1] = y
             if z > bmax[2]: bmax[2] = z
 
+        eid = element.id()
+        if eid in surface_ids and surf_verts_used < _MAX_SURF_VERTS:
+            plane_type = surface_ids[eid]
+            qto = _qto_area(element, ifc_elem)
+            if qto is not None:
+                area_sqft = qto * area_scale
+            else:
+                area_sqft = _normal_filtered_area(raw_verts, raw_faces, plane_type) * area_scale
+
+            if area_sqft > 0.01:
+                total_surf_sqft += area_sqft
+                surface_planes.append({
+                    "id": f"p{eid}",
+                    "type": plane_type,
+                    "area_sqft": round(area_sqft, 2),
+                    "verts": raw_verts,
+                    "faces": raw_faces,
+                })
+                surf_verts_used += len(raw_verts) // 3
+
         has_more = iterator.next()
 
     return {
@@ -296,6 +429,8 @@ def _export_ifc(path: Path) -> dict[str, Any]:
         "bounds": _safe_bounds(bmin, bmax),
         "element_types": {k: {"color": v["color"]} for k, v in groups.items()},
         "groups": groups,
+        "surface_planes": surface_planes,
+        "external_surface_sqft": round(total_surf_sqft, 1),
     }
 
 

@@ -108,6 +108,24 @@
       </div>
     </div>
 
+    <!-- Surface area -->
+    <div id="surfaceAreaSection" class="hidden">
+      <div class="result-grid">
+        <div class="result-card result-card-full">
+          <div class="result-card-label">External Surface Area</div>
+          <div class="result-card-value" id="rSurfaceArea">— sq ft</div>
+          <div class="result-card-sub">roofing + exterior walls</div>
+          <div class="surface-controls">
+            <button class="btn btn-ghost btn-small" id="surfaceToggle" data-on="false">Show Surfaces</button>
+            <div id="deletePlanesRow" class="hidden">
+              <button class="btn btn-small surface-delete-btn" id="deletePlanesBtn" disabled>Delete Selected</button>
+            </div>
+          </div>
+          <p class="surface-hint">Click surfaces in 3D view to select, then delete to exclude from total.</p>
+        </div>
+      </div>
+    </div>
+
     <!-- Status -->
     <p id="statusText" class="status-text">Drop a file to start.</p>
 

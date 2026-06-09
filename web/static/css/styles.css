@@ -438,6 +438,39 @@ html, body {
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
 
+/* ── surface area controls ──────────────────────────────────────────────── */
+
+.surface-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.surface-delete-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--danger);
+}
+
+.surface-delete-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  filter: none;
+}
+
+.surface-delete-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.surface-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
 /* ── responsive ────────────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {

@@ -29,6 +29,10 @@ export class BisonViewer {
   constructor(container) {
     this._container = container;
     this._current   = null;
+    this._surfaceGroup = null;
+    this._surfacePlaneData = {};
+    this._selectedSurfaces = new Set();
+    this._onSurfaceClick = null;
     this._initScene();
     this._initCamera();
     this._initRenderer();
@@ -37,6 +41,7 @@ export class BisonViewer {
     this._initGrid();
     this._startLoop();
     this._initResize();
+    this._initSurfaceClickHandler();
   }
 
   // ── public ──────────────────────────────────────────────────────────────
@@ -56,6 +61,100 @@ export class BisonViewer {
   destroy() {
     this._clear();
     this._renderer.dispose();
+  }
+
+  loadSurfacePlanes(planes) {
+    if (this._surfaceGroup) {
+      this._scene.remove(this._surfaceGroup);
+      this._surfaceGroup.traverse(child => {
+        child.geometry?.dispose();
+        child.material?.dispose();
+      });
+      this._surfaceGroup = null;
+    }
+    this._surfacePlaneData = {};
+    this._selectedSurfaces = new Set();
+    if (!planes || !planes.length) return;
+    const group = new THREE.Group();
+    group.visible = false;
+    for (const plane of planes) {
+      if (!plane.verts?.length || !plane.faces?.length) continue;
+      const positions = remapZtoY(plane.verts);
+      const indices = new Uint32Array(plane.faces);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geo.setIndex(new THREE.BufferAttribute(indices, 1));
+      geo.computeVertexNormals();
+      const baseColor = plane.type === "roof" ? 0xF4A820 : 0x4488ff;
+      const mat = new THREE.MeshStandardMaterial({
+        color: baseColor, transparent: true, opacity: 0.38,
+        side: THREE.DoubleSide, depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.userData.surfaceId = plane.id;
+      group.add(mesh);
+      this._surfacePlaneData[plane.id] = { mesh, area: plane.area_sqft, type: plane.type, baseColor };
+    }
+    this._surfaceGroup = group;
+    this._scene.add(group);
+  }
+
+  setSurfacesVisible(visible) {
+    if (this._surfaceGroup) this._surfaceGroup.visible = visible;
+  }
+
+  deleteSelectedPlanes() {
+    let removedArea = 0;
+    for (const id of this._selectedSurfaces) {
+      const entry = this._surfacePlaneData[id];
+      if (!entry) continue;
+      removedArea += entry.area;
+      this._surfaceGroup.remove(entry.mesh);
+      entry.mesh.geometry.dispose();
+      entry.mesh.material.dispose();
+      delete this._surfacePlaneData[id];
+    }
+    this._selectedSurfaces.clear();
+    return removedArea;
+  }
+
+  getSelectedCount() { return this._selectedSurfaces.size; }
+
+  set onSurfaceClick(fn) { this._onSurfaceClick = fn; }
+
+  _initSurfaceClickHandler() {
+    const canvas = this._renderer.domElement;
+    const raycaster = new THREE.Raycaster();
+    let downX = 0, downY = 0;
+    canvas.addEventListener("pointerdown", (e) => { downX = e.clientX; downY = e.clientY; });
+    canvas.addEventListener("pointerup", (e) => {
+      const dx = e.clientX - downX, dy = e.clientY - downY;
+      if (Math.sqrt(dx * dx + dy * dy) > 5) return;
+      if (!this._surfaceGroup?.visible) return;
+      const rect = canvas.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, this._camera);
+      const meshes = Object.values(this._surfacePlaneData).map(d => d.mesh);
+      const hits = raycaster.intersectObjects(meshes, false);
+      if (!hits.length) return;
+      const id = hits[0].object.userData.surfaceId;
+      if (!id) return;
+      const entry = this._surfacePlaneData[id];
+      if (!entry) return;
+      if (this._selectedSurfaces.has(id)) {
+        this._selectedSurfaces.delete(id);
+        entry.mesh.material.color.setHex(entry.baseColor);
+        entry.mesh.material.opacity = 0.38;
+      } else {
+        this._selectedSurfaces.add(id);
+        entry.mesh.material.color.setHex(0xff3333);
+        entry.mesh.material.opacity = 0.55;
+      }
+      this._onSurfaceClick?.({ id, selectedCount: this._selectedSurfaces.size });
+    });
   }
 
   // ── DXF ─────────────────────────────────────────────────────────────────
@@ -190,6 +289,16 @@ export class BisonViewer {
   }
 
   _clear() {
+    if (this._surfaceGroup) {
+      this._scene.remove(this._surfaceGroup);
+      this._surfaceGroup.traverse(child => {
+        child.geometry?.dispose();
+        child.material?.dispose();
+      });
+      this._surfaceGroup = null;
+    }
+    this._surfacePlaneData = {};
+    this._selectedSurfaces = new Set();
     if (!this._current) return;
     this._scene.remove(this._current);
     this._current.traverse((child) => {
