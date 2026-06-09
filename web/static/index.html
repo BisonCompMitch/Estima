@@ -39,6 +39,20 @@
       <p id="dropLabel" class="drop-label">Drop .ifc file here, or click to browse</p>
     </div>
 
+    <!-- Loading status panel -->
+    <div id="loadingPanel" class="loading-panel hidden">
+      <div class="loading-header">
+        <div class="ls-spinner"></div>
+        <span id="loadingFilename" class="loading-filename">—</span>
+      </div>
+      <ul class="loading-steps">
+        <li class="ls-item" data-state="pending">Parsing IFC file</li>
+        <li class="ls-item" data-state="pending">Processing geometry elements</li>
+        <li class="ls-item" data-state="pending">Computing surface areas</li>
+        <li class="ls-item" data-state="pending">Rendering 3D preview</li>
+      </ul>
+    </div>
+
     <!-- Cost rates -->
     <div class="panel">
       <div class="rate-grid">

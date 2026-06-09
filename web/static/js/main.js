@@ -10,6 +10,8 @@ let currentFile        = null;
 let lastResult         = null;
 let baseSurfaceArea    = 0;
 let removedSurfaceArea = 0;
+let _loadingDone       = false;
+let _loadingTimers     = [];
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const dropZone      = document.getElementById("dropZone");
@@ -32,6 +34,9 @@ const rSurfaceArea       = document.getElementById("rSurfaceArea");
 const surfaceToggle      = document.getElementById("surfaceToggle");
 const deletePlanesRow    = document.getElementById("deletePlanesRow");
 const deletePlanesBtn    = document.getElementById("deletePlanesBtn");
+const loadingPanel    = document.getElementById("loadingPanel");
+const loadingFilename = document.getElementById("loadingFilename");
+const loadingStepEls  = Array.from(document.querySelectorAll(".ls-item"));
 
 const isCreateEstimateRoute = window.location.pathname.replace(/\/+$/, "") === "/create-estimate";
 
@@ -107,7 +112,8 @@ function handleFile(f) {
   currentFile = f;
   dropLabel.textContent = f.name;
   estimateBtn.disabled = false;
-  setStatus(`Loading ${f.name}…`);
+  setStatus("");
+  startLoading(f.name);
   loadPreview();
 }
 
@@ -131,6 +137,8 @@ async function loadPreview() {
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.detail || "Preview failed.");
 
+    finishLoading();
+
     const info = viewer.loadGeometry(payload);
 
     baseSurfaceArea    = payload.external_surface_sqft || 0;
@@ -150,9 +158,10 @@ async function loadPreview() {
     if (info.type === "dxf") {
       setStatus(`${currentFile.name} loaded.`);
     } else {
-      setStatus(`${currentFile.name} — ${info.groups} element group(s) loaded.`);
+      setStatus(`${info.groups} element group(s) loaded.`);
     }
   } catch (err) {
+    cancelLoading();
     setStatus(`Preview failed: ${err.message}`, true);
     console.error(err);
   }
@@ -222,6 +231,40 @@ function toggleDetails() {
   const open = !detailsBody.classList.contains("hidden");
   detailsBody.classList.toggle("hidden", open);
   detailsToggle.textContent = open ? "Details ▾" : "Details ▴";
+}
+
+// ── loading panel ──────────────────────────────────────────────────────────
+function _applyStep(n) {
+  loadingStepEls.forEach((el, i) => {
+    el.dataset.state = i < n ? "done" : i === n ? "active" : "pending";
+  });
+}
+
+function startLoading(filename) {
+  _loadingDone = false;
+  _loadingTimers.forEach(clearTimeout);
+  _loadingTimers = [];
+  loadingFilename.textContent = filename;
+  loadingPanel.classList.remove("hidden");
+  _applyStep(0);
+  _loadingTimers.push(setTimeout(() => { if (!_loadingDone) _applyStep(1); }, 900));
+  _loadingTimers.push(setTimeout(() => { if (!_loadingDone) _applyStep(2); }, 3200));
+}
+
+function finishLoading() {
+  _loadingDone = true;
+  _loadingTimers.forEach(clearTimeout);
+  _applyStep(3);
+  setTimeout(() => {
+    _applyStep(loadingStepEls.length);
+    setTimeout(() => loadingPanel.classList.add("hidden"), 500);
+  }, 350);
+}
+
+function cancelLoading() {
+  _loadingDone = true;
+  _loadingTimers.forEach(clearTimeout);
+  loadingPanel.classList.add("hidden");
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
