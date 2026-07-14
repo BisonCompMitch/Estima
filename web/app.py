@@ -10,6 +10,7 @@ from array import array
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -17,6 +18,27 @@ _HERE = Path(__file__).parent
 _STATIC = _HERE / "static"
 
 app = FastAPI(title="BisonScope", version="3.0")
+
+_DEFAULT_CORS_ORIGINS = (
+    "https://bisoncompmitch.github.io,"
+    "http://localhost:8765,"
+    "http://127.0.0.1:8765"
+)
+
+
+def _cors_origins() -> list[str]:
+    raw = os.environ.get("BISONSCOPE_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
+    return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    max_age=600,
+)
+
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 # ── IFC preview colour buckets (matches Patch1) ───────────────────────────
@@ -235,6 +257,11 @@ async def ifc_preview_endpoint(file: UploadFile = File(...)) -> dict:
     """Return base64-encoded bucket meshes for the Three.js IFC viewer (Patch1 format)."""
     if not file.filename or not file.filename.lower().endswith(".ifc"):
         raise HTTPException(status_code=400, detail="Only .ifc files are accepted here.")
+    if _ifc_geometry_disabled():
+        raise HTTPException(
+            status_code=422,
+            detail="IFC 3D preview is disabled on this backend because native geometry is not supported by the host CPU.",
+        )
     tmp_path = await _save_upload(file)
     try:
         return _build_ifc_preview_payload(tmp_path)
@@ -249,6 +276,11 @@ async def ifc_preview_endpoint(file: UploadFile = File(...)) -> dict:
 @app.post("/api/geometry")
 async def geometry_endpoint(file: UploadFile = File(...)) -> dict:
     _validate_upload(file)
+    if Path(file.filename or "").suffix.lower() == ".ifc" and _ifc_geometry_disabled():
+        raise HTTPException(
+            status_code=422,
+            detail="IFC 3D geometry preview is disabled on this backend because native geometry is not supported by the host CPU.",
+        )
     tmp_path = await _save_upload(file)
     try:
         from web.geometry_export import export_geometry
@@ -288,3 +320,7 @@ def _cleanup(path: Path) -> None:
         path.unlink(missing_ok=True)
     except Exception:
         pass
+
+
+def _ifc_geometry_disabled() -> bool:
+    return os.environ.get("BISONSCOPE_DISABLE_IFC_GEOM", "").strip().lower() in {"1", "true", "yes"}

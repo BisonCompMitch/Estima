@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import os
 from pathlib import Path
 import sys
 from typing import Iterable
@@ -122,6 +123,10 @@ _MEMBER_LENGTH_PROP_NAMES = (
 )
 
 
+def _ifc_geometry_disabled() -> bool:
+    return os.environ.get("BISONSCOPE_DISABLE_IFC_GEOM", "").strip().lower() in {"1", "true", "yes"}
+
+
 def _detect_ifc_length_unit(ifc_file: object) -> str | None:
     """Best-effort extraction of the file's length unit."""
     try:
@@ -163,6 +168,12 @@ def _resolve_ifc_scale_to_feet(ifc_file: object, source_length_unit: str | None)
         normalized = normalize_length_unit(source_length_unit)
         return length_to_feet(1.0, normalized), normalized
 
+    if _ifc_geometry_disabled():
+        detected = _detect_ifc_length_unit(ifc_file)
+        if detected:
+            return length_to_feet(1.0, detected), detected
+        return length_to_feet(1.0, "m"), "m"
+
     try:
         import ifcopenshell.util.unit as unit_utils
 
@@ -188,6 +199,9 @@ def _resolve_ifc_area_scale_to_sqft(
     if source_length_unit:
         unit = normalize_length_unit(source_length_unit)
         return length_to_feet(1.0, unit) ** 2
+
+    if _ifc_geometry_disabled():
+        return length_scale_to_feet ** 2
 
     try:
         import ifcopenshell.util.unit as unit_utils
@@ -262,6 +276,9 @@ def _estimate_space_geometry_floor_area_native(ifc_file: object) -> float:
     This is more explicit than the generic framing-footprint fallback, but it still
     remains an approximation because it uses projected geometry.
     """
+    if _ifc_geometry_disabled():
+        return 0.0
+
     spaces = list(ifc_file.by_type("IfcSpace"))
     if not spaces:
         return 0.0
@@ -307,6 +324,9 @@ def _estimate_shell_shadow_floor_area_sqft(ifc_file: object) -> float:
     This is a fallback for models that expose shell geometry but do not carry
     reliable authored floor-area quantities.
     """
+    if _ifc_geometry_disabled():
+        return 0.0
+
     shell_elements: list[object] = []
     for class_name in _SHELL_SHADOW_CLASSES:
         shell_elements.extend(list(ifc_file.by_type(class_name)))
@@ -402,6 +422,9 @@ def _estimate_floor_area_sqft_from_framing_footprint(ifc_file: object) -> float:
 
     This is only used when no explicit floor area quantities exist.
     """
+    if _ifc_geometry_disabled():
+        return 0.0
+
     try:
         from shapely.geometry import MultiPoint
     except ImportError as exc:

@@ -216,7 +216,12 @@ async function loadPreview() {
     }
   } catch (err) {
     cancelLoading();
-    setStatus(`Preview failed: ${err.message}`, true);
+    const msg = err?.message || "Preview failed.";
+    if (msg.includes("3D geometry preview is disabled") || msg.includes("3D preview is disabled")) {
+      setStatus("3D preview is unavailable on this backend. Run Estimate to calculate.");
+    } else {
+      setStatus(`Preview failed: ${msg}`, true);
+    }
     console.error(err);
   }
 }
