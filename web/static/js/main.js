@@ -12,6 +12,9 @@ let baseSurfaceArea    = 0;
 let removedSurfaceArea = 0;
 let _loadingDone       = false;
 let _loadingTimers     = [];
+let _methodsData       = null;
+let _activeMethod      = "default";
+let _lastPayload       = null;
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const dropZone      = document.getElementById("dropZone");
@@ -37,6 +40,7 @@ const deletePlanesBtn    = document.getElementById("deletePlanesBtn");
 const loadingPanel    = document.getElementById("loadingPanel");
 const loadingFilename = document.getElementById("loadingFilename");
 const loadingStepEls  = Array.from(document.querySelectorAll(".ls-item"));
+const methodBtns      = document.getElementById("methodBtns");
 
 const isCreateEstimateRoute = window.location.pathname.replace(/\/+$/, "") === "/create-estimate";
 
@@ -80,7 +84,9 @@ deletePlanesBtn?.addEventListener("click", () => {
 });
 
 // ── drag-and-drop ──────────────────────────────────────────────────────────
-dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("click", (event) => {
+  if (event.target !== fileInput) fileInput.click();
+});
 
 dropZone.addEventListener("dragover", (e) => {
   e.preventDefault();
@@ -98,6 +104,10 @@ dropZone.addEventListener("drop", (e) => {
   if (f) handleFile(f);
 });
 
+fileInput.addEventListener("click", () => {
+  fileInput.value = "";
+});
+
 fileInput.addEventListener("change", () => {
   const f = fileInput.files?.[0];
   if (f) handleFile(f);
@@ -112,9 +122,8 @@ function handleFile(f) {
   currentFile = f;
   dropLabel.textContent = f.name;
   estimateBtn.disabled = false;
-  setStatus("");
-  startLoading(f.name);
-  loadPreview();
+  cancelLoading();
+  setStatus("IFC ready. Click Run Estimate to calculate.");
 }
 
 // ── actions ────────────────────────────────────────────────────────────────
@@ -122,9 +131,40 @@ estimateBtn.addEventListener("click", runEstimate);
 detailsToggle?.addEventListener("click", toggleDetails);
 exportBtn?.addEventListener("click", exportJson);
 
+methodBtns?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".method-btn");
+  if (!btn) return;
+  switchMethod(btn.dataset.method);
+});
+
 function updateSurfaceArea() {
   const area = Math.max(0, baseSurfaceArea - removedSurfaceArea);
   if (rSurfaceArea) rSurfaceArea.textContent = `${fmt(area)} sq ft`;
+}
+
+function _syncMethodBtns() {
+  methodBtns?.querySelectorAll(".method-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.method === _activeMethod);
+  });
+}
+
+function switchMethod(method) {
+  if (method !== "default" && !_methodsData?.[method]) return;
+  _activeMethod = method;
+  removedSurfaceArea = 0;
+  const surfOn = surfaceToggle?.dataset.on === "true";
+  if (method === "default") {
+    baseSurfaceArea = _lastPayload?.external_surface_sqft || 0;
+    viewer.loadSurfacePlanes(_lastPayload?.surface_planes || []);
+  } else {
+    const m = _methodsData[method];
+    baseSurfaceArea = m.sqft;
+    viewer.loadSurfacePlanes(m.planes || []);
+  }
+  viewer.setSurfacesVisible(surfOn);
+  if (deletePlanesBtn) { deletePlanesBtn.disabled = true; deletePlanesBtn.textContent = "Delete Selected"; }
+  updateSurfaceArea();
+  _syncMethodBtns();
 }
 
 async function loadPreview() {
@@ -141,6 +181,9 @@ async function loadPreview() {
 
     const info = viewer.loadGeometry(payload);
 
+    _lastPayload       = payload;
+    _methodsData       = payload.methods || null;
+    _activeMethod      = "default";
     baseSurfaceArea    = payload.external_surface_sqft || 0;
     removedSurfaceArea = 0;
     viewer.loadSurfacePlanes(payload.surface_planes || []);
@@ -151,6 +194,7 @@ async function loadPreview() {
     if (payload.type === "ifc" && surfaceAreaSection) {
       surfaceAreaSection.classList.remove("hidden");
       updateSurfaceArea();
+      _syncMethodBtns();
     } else if (surfaceAreaSection) {
       surfaceAreaSection.classList.add("hidden");
     }
@@ -162,7 +206,12 @@ async function loadPreview() {
     }
   } catch (err) {
     cancelLoading();
-    setStatus(`Preview failed: ${err.message}`, true);
+    const msg = err?.message || "Preview failed.";
+    if (msg.includes("3D geometry preview is disabled") || msg.includes("3D preview is disabled")) {
+      setStatus("IFC ready. 3D preview is unavailable here; click Run Estimate to calculate.");
+    } else {
+      setStatus(`Preview failed: ${msg}`, true);
+    }
     console.error(err);
   }
 }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BisonScope — CFS Estimator</title>
-  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="./static/css/styles.css?v=20260722-ifc-upload-3" />
 </head>
 
 <body>
@@ -14,8 +14,8 @@
     <div class="route-banner-title">V3 estimate workspace</div>
   </div>
   <div class="route-banner-actions">
-    <a class="btn btn-ghost btn-small" href="/">Current view</a>
-    <a class="btn btn-primary btn-small" href="/create-estimate">Create Estimate</a>
+    <a class="btn btn-ghost btn-small" href="./">Current view</a>
+    <a class="btn btn-primary btn-small" href="./create-estimate">Create Estimate</a>
   </div>
 </div>
 <div class="app-shell">
@@ -25,7 +25,7 @@
 
     <!-- Brand -->
     <div class="brand-bar">
-      <img src="/static/logo.png" alt="BisonScope" class="brand-logo" />
+      <img src="./static/logo.png" alt="BisonScope" class="brand-logo" />
       <div>
         <div class="brand-name">BisonScope</div>
         <div class="brand-sub">Cold-formed steel estimator</div>
@@ -34,7 +34,7 @@
 
     <!-- Drop zone -->
     <div id="dropZone" class="drop-zone">
-      <input type="file" id="fileInput" accept=".ifc" />
+      <input type="file" id="fileInput" accept=".ifc,.IFC" aria-label="Choose IFC file" />
       <div class="drop-icon">↑</div>
       <p id="dropLabel" class="drop-label">Drop .ifc file here, or click to browse</p>
     </div>
@@ -129,6 +129,13 @@
           <div class="result-card-label">External Surface Area</div>
           <div class="result-card-value" id="rSurfaceArea">— sq ft</div>
           <div class="result-card-sub">roofing + exterior walls</div>
+          <div class="method-btns" id="methodBtns">
+            <button class="btn btn-small method-btn active" data-method="default">Depth-Test</button>
+            <button class="btn btn-small method-btn" data-method="m4">Strict</button>
+            <button class="btn btn-small method-btn" data-method="m5">Hull</button>
+            <button class="btn btn-small method-btn" data-method="m6">Generous</button>
+            <button class="btn btn-small method-btn" data-method="m7">Exact</button>
+          </div>
           <div class="surface-controls">
             <button class="btn btn-ghost btn-small" id="surfaceToggle" data-on="false">Show Surfaces</button>
             <div id="deletePlanesRow" class="hidden">
@@ -153,6 +160,6 @@
 
 </div>
 
-<script type="module" src="/static/js/main.js"></script>
+<script type="module" src="./static/js/main.js?v=20260722-ifc-upload-3"></script>
 </body>
 </html>

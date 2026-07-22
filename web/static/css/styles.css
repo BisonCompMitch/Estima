@@ -99,7 +99,19 @@ html, body {
   position: relative;
 }
 
-.drop-zone input[type="file"] { display: none; }
+.drop-zone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.drop-zone > :not(input[type="file"]) {
+  pointer-events: none;
+}
 
 .drop-zone:hover,
 .drop-zone.drag-over {
@@ -469,6 +481,25 @@ html, body {
   color: var(--muted);
   margin-top: 6px;
   line-height: 1.4;
+}
+
+.method-btns {
+  display: flex;
+  gap: 5px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.method-btn {
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.method-btn.active {
+  opacity: 1;
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.55);
+  color: #a5b4fc;
 }
 
 /* ── loading panel ─────────────────────────────────────────────────────── */
