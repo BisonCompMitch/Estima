@@ -99,7 +99,9 @@ deletePlanesBtn?.addEventListener("click", () => {
 });
 
 // ── drag-and-drop ──────────────────────────────────────────────────────────
-dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("click", (event) => {
+  if (event.target !== fileInput) fileInput.click();
+});
 
 dropZone.addEventListener("dragover", (e) => {
   e.preventDefault();
