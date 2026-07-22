@@ -119,6 +119,10 @@ dropZone.addEventListener("drop", (e) => {
   if (f) handleFile(f);
 });
 
+fileInput.addEventListener("click", () => {
+  fileInput.value = "";
+});
+
 fileInput.addEventListener("change", () => {
   const f = fileInput.files?.[0];
   if (f) handleFile(f);
@@ -133,7 +137,7 @@ function handleFile(f) {
   currentFile = f;
   dropLabel.textContent = f.name;
   estimateBtn.disabled = false;
-  setStatus("");
+  setStatus("IFC selected. Checking preview...");
   startLoading(f.name);
   loadPreview();
 }
@@ -220,7 +224,7 @@ async function loadPreview() {
     cancelLoading();
     const msg = err?.message || "Preview failed.";
     if (msg.includes("3D geometry preview is disabled") || msg.includes("3D preview is disabled")) {
-      setStatus("3D preview is unavailable on this backend. Run Estimate to calculate.");
+      setStatus("IFC ready. 3D preview is unavailable here; click Run Estimate to calculate.");
     } else {
       setStatus(`Preview failed: ${msg}`, true);
     }
