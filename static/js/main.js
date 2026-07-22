@@ -137,9 +137,8 @@ function handleFile(f) {
   currentFile = f;
   dropLabel.textContent = f.name;
   estimateBtn.disabled = false;
-  setStatus("IFC selected. Checking preview...");
-  startLoading(f.name);
-  loadPreview();
+  cancelLoading();
+  setStatus("IFC ready. Click Run Estimate to calculate.");
 }
 
 // ── actions ────────────────────────────────────────────────────────────────
