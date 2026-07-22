@@ -7,11 +7,11 @@
  * Both IFC and 3D DXF use Z-up coordinates; remapped to Three.js Y-up here.
  */
 
-import * as THREE from "https://esm.sh/three@0.164.1";
-import { OrbitControls } from "https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js";
+import * as THREE from "../vendor/three.module.js";
+import { OrbitControls } from "../vendor/OrbitControls.js";
 
-const WEB_IFC_API_URL = "https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/web-ifc-api.js";
-const WEB_IFC_WASM_PATH = "https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/";
+const WEB_IFC_API_URL = "../vendor/web-ifc-api.js";
+const WEB_IFC_WASM_PATH = new URL("../vendor/", import.meta.url).href;
 
 const IFC_SKIP_TYPES = new Set([
   "IFCSPACE", "IFCOPENINGELEMENT", "IFCVIRTUALELEMENT",
