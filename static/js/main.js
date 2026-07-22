@@ -2,7 +2,7 @@
  * BisonScope Web — application logic.
  */
 
-import { BisonViewer } from "./viewer3d.js?v=20260722-local-vendor-1";
+import { BisonViewer } from "./viewer3d.js?v=20260722-webgl-fallback-1";
 
 // ── state ──────────────────────────────────────────────────────────────────
 let viewer             = null;
