@@ -4,20 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BisonScope — CFS Estimator</title>
-  <link rel="stylesheet" href="../static/css/styles.css?v=20260722-ifc-upload-3" />
+  <link rel="stylesheet" href="../static/css/styles.css?v=20260722-new-backend-1" />
 </head>
 
 <body>
-<div id="routeBanner" class="route-banner hidden">
-  <div>
-    <div class="route-banner-kicker">Create Estimate</div>
-    <div class="route-banner-title">V3 estimate workspace</div>
-  </div>
-  <div class="route-banner-actions">
-    <a class="btn btn-ghost btn-small" href="../">Current view</a>
-    <a class="btn btn-primary btn-small" href="../create-estimate/">Create Estimate</a>
-  </div>
-</div>
 <div class="app-shell">
 
   <!-- ── Left panel ──────────────────────────────────────────────────────── -->
@@ -33,11 +23,11 @@
     </div>
 
     <!-- Drop zone -->
-    <div id="dropZone" class="drop-zone">
+    <label id="dropZone" class="drop-zone" for="fileInput">
       <input type="file" id="fileInput" accept=".ifc,.IFC" aria-label="Choose IFC file" />
       <div class="drop-icon">↑</div>
       <p id="dropLabel" class="drop-label">Drop .ifc file here, or click to browse</p>
-    </div>
+    </label>
 
     <!-- Loading status panel -->
     <div id="loadingPanel" class="loading-panel hidden">
@@ -160,7 +150,7 @@
 
 </div>
 
-<script src="../static/config.js?v=20260722-ifc-upload-3"></script>
-<script type="module" src="../static/js/main.js?v=20260722-ifc-upload-3"></script>
+<script src="../static/config.js?v=20260722-new-backend-1"></script>
+<script type="module" src="../static/js/main.js?v=20260722-new-backend-1"></script>
 </body>
 </html>

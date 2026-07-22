@@ -10,6 +10,31 @@
 import * as THREE from "https://esm.sh/three@0.164.1";
 import { OrbitControls } from "https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js";
 
+const WEB_IFC_API_URL = "https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/web-ifc-api.js";
+const WEB_IFC_WASM_PATH = "https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/";
+
+const IFC_SKIP_TYPES = new Set([
+  "IFCSPACE", "IFCOPENINGELEMENT", "IFCVIRTUALELEMENT",
+  "IFCANNOTATION", "IFCGRID", "IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY",
+]);
+
+const IFC_TYPE_COLORS = {
+  IFCWALL: "#6B7FA8",
+  IFCWALLSTANDARDCASE: "#6B7FA8",
+  IFCCURTAINWALL: "#A8C8D8",
+  IFCSLAB: "#B8956A",
+  IFCROOF: "#9E5C38",
+  IFCCOLUMN: "#4A7FA8",
+  IFCBEAM: "#4A7FA8",
+  IFCMEMBER: "#E8C840",
+  IFCPLATE: "#D4A820",
+  IFCDOOR: "#7A5814",
+  IFCWINDOW: "#7EC8D3",
+  IFCSTAIR: "#888888",
+  IFCFOUNDATION: "#8B7355",
+  IFCFOOTING: "#8B7355",
+};
+
 // ── coordinate remap ───────────────────────────────────────────────────────
 // Z-up (IFC / 3D DXF) → Y-up (Three.js): swap Y and Z, negate new Z.
 function remapZtoY(flat) {
@@ -52,6 +77,28 @@ export class BisonViewer {
     if (payload.type === "dxf") return this._loadDXF(payload);
     if (payload.type === "ifc") return this._loadIFC(payload);
     return {};
+  }
+
+  async loadIfcFile(file, onProgress) {
+    onProgress?.("Loading IFC parser...");
+    const WebIFC = await import(WEB_IFC_API_URL);
+    const api = new WebIFC.IfcAPI();
+    api.SetWasmPath(WEB_IFC_WASM_PATH, true);
+    await api.Init();
+
+    onProgress?.("Reading IFC file...");
+    const data = new Uint8Array(await file.arrayBuffer());
+    const modelID = api.OpenModel(data, {
+      COORDINATE_TO_ORIGIN: true,
+      OPTIMIZE_PROFILES: true,
+    });
+    if (modelID < 0) throw new Error("IFC file could not be opened.");
+
+    try {
+      return await this._loadIfcModelFromApi(api, modelID, onProgress);
+    } finally {
+      api.CloseModel(modelID);
+    }
   }
 
   resetCamera() {
@@ -234,6 +281,100 @@ export class BisonViewer {
   }
 
   // ── scene setup ──────────────────────────────────────────────────────────
+
+  async _loadIfcModelFromApi(api, modelID, onProgress) {
+    onProgress?.("Generating IFC geometry...");
+    const flatMeshes = api.LoadAllGeometry(modelID);
+    const total = flatMeshes.size();
+    const groups = {};
+    let elementCount = 0;
+    let placedGeometryCount = 0;
+    let vertexCount = 0;
+
+    for (let i = 0; i < total; i++) {
+      const flatMesh = flatMeshes.get(i);
+      const typeName = this._ifcTypeName(api, modelID, flatMesh.expressID);
+      if (IFC_SKIP_TYPES.has(typeName)) {
+        flatMesh.delete?.();
+        continue;
+      }
+
+      const geometries = flatMesh.geometries;
+      if (geometries.size() > 0) elementCount++;
+
+      const group = groups[typeName] ||= {
+        verts: [],
+        faces: [],
+        color: IFC_TYPE_COLORS[typeName] || "#AAAAAA",
+      };
+
+      for (let j = 0; j < geometries.size(); j++) {
+        const placed = geometries.get(j);
+        const geometry = api.GetGeometry(modelID, placed.geometryExpressID);
+        const vertices = api.GetVertexArray(geometry.GetVertexData(), geometry.GetVertexDataSize());
+        const indices = api.GetIndexArray(geometry.GetIndexData(), geometry.GetIndexDataSize());
+        this._appendIfcGeometry(group, vertices, indices, placed.flatTransformation);
+        vertexCount += Math.floor(vertices.length / 6);
+        placedGeometryCount++;
+        geometry.delete?.();
+      }
+
+      flatMesh.delete?.();
+
+      if (i % 200 === 0) {
+        const pct = total ? Math.round((i / total) * 100) : 0;
+        onProgress?.(`Rendering IFC preview... ${pct}%`);
+        await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+    }
+
+    const payload = {
+      type: "ifc",
+      groups: Object.fromEntries(Object.entries(groups).filter(([, data]) => data.verts.length && data.faces.length)),
+      surface_planes: [],
+      external_surface_sqft: 0,
+    };
+
+    if (!Object.keys(payload.groups).length) {
+      throw new Error("No renderable IFC geometry was found.");
+    }
+
+    const info = this.loadGeometry(payload);
+    return { ...info, elementCount, placedGeometryCount, vertexCount };
+  }
+
+  _ifcTypeName(api, modelID, expressID) {
+    try {
+      const typeCode = api.GetLineType(modelID, expressID);
+      return String(api.GetNameFromTypeCode(typeCode) || "IFCUNKNOWN").toUpperCase();
+    } catch {
+      return "IFCUNKNOWN";
+    }
+  }
+
+  _appendIfcGeometry(group, vertices, indices, matrix) {
+    const m = matrix && matrix.length >= 16 ? matrix : null;
+    const offset = group.verts.length / 3;
+
+    for (let i = 0; i < vertices.length; i += 6) {
+      const x = vertices[i];
+      const y = vertices[i + 1];
+      const z = vertices[i + 2];
+      if (m) {
+        group.verts.push(
+          m[0] * x + m[4] * y + m[8] * z + m[12],
+          m[1] * x + m[5] * y + m[9] * z + m[13],
+          m[2] * x + m[6] * y + m[10] * z + m[14],
+        );
+      } else {
+        group.verts.push(x, y, z);
+      }
+    }
+
+    for (let i = 0; i < indices.length; i++) {
+      group.faces.push(indices[i] + offset);
+    }
+  }
 
   _initScene() {
     this._scene = new THREE.Scene();

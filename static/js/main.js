@@ -2,7 +2,7 @@
  * BisonScope Web — application logic.
  */
 
-import { BisonViewer } from "./viewer3d.js";
+import { BisonViewer } from "./viewer3d.js?v=20260722-new-backend-1";
 
 // ── state ──────────────────────────────────────────────────────────────────
 let viewer             = null;
@@ -15,6 +15,7 @@ let _loadingTimers     = [];
 let _methodsData       = null;
 let _activeMethod      = "default";
 let _lastPayload       = null;
+let _previewToken      = 0;
 
 const API_BASE = (window.BISONSCOPE_API_BASE || "").replace(/\/+$/, "");
 const APP_BASE = (() => {
@@ -99,25 +100,32 @@ deletePlanesBtn?.addEventListener("click", () => {
 });
 
 // ── drag-and-drop ──────────────────────────────────────────────────────────
-dropZone.addEventListener("click", (event) => {
-  if (event.target !== fileInput) fileInput.click();
-});
-
-dropZone.addEventListener("dragover", (e) => {
+function handleDragOver(e) {
   e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
   dropZone.classList.add("drag-over");
-});
+}
 
-dropZone.addEventListener("dragleave", (e) => {
-  if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove("drag-over");
-});
-
-dropZone.addEventListener("drop", (e) => {
+function handleDragLeave(e) {
   e.preventDefault();
+  e.stopPropagation();
+  if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove("drag-over");
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
   dropZone.classList.remove("drag-over");
-  const f = e.dataTransfer.files?.[0];
+  const f = e.dataTransfer?.files?.[0];
   if (f) handleFile(f);
-});
+}
+
+for (const target of [dropZone, fileInput]) {
+  target.addEventListener("dragover", handleDragOver);
+  target.addEventListener("dragleave", handleDragLeave);
+  target.addEventListener("drop", handleDrop);
+}
 
 fileInput.addEventListener("click", () => {
   fileInput.value = "";
@@ -137,8 +145,10 @@ function handleFile(f) {
   currentFile = f;
   dropLabel.textContent = f.name;
   estimateBtn.disabled = false;
-  cancelLoading();
-  setStatus("IFC ready. Click Run Estimate to calculate.");
+  const token = ++_previewToken;
+  startLoading(f.name);
+  setStatus("Rendering IFC preview...");
+  loadPreview(token);
 }
 
 // ── actions ────────────────────────────────────────────────────────────────
@@ -182,40 +192,55 @@ function switchMethod(method) {
   _syncMethodBtns();
 }
 
-async function loadPreview() {
+async function loadPreview(token = _previewToken) {
   if (!currentFile) return;
+  const file = currentFile;
+  const ext = file.name.split(".").pop().toLowerCase();
+
+  if (ext === "ifc") {
+    try {
+      setStatus("Rendering IFC preview from backend...");
+      const info = await loadServerPreview(file, token);
+      if (token !== _previewToken || file !== currentFile) return;
+
+      setStatus(`IFC preview loaded (${info.groups} group${info.groups === 1 ? "" : "s"}). Click Run Estimate to calculate.`);
+    } catch (err) {
+      if (token !== _previewToken || file !== currentFile) return;
+      console.warn("Backend IFC preview failed; falling back to browser render.", err);
+      try {
+        const info = await viewer.loadIfcFile(file, (msg) => {
+          if (token === _previewToken) setStatus(msg);
+        });
+        if (token !== _previewToken || file !== currentFile) return;
+
+        finishLoading();
+        _lastPayload = null;
+        _methodsData = null;
+        _activeMethod = "default";
+        baseSurfaceArea = 0;
+        removedSurfaceArea = 0;
+        surfaceAreaSection?.classList.add("hidden");
+        deletePlanesRow?.classList.add("hidden");
+        if (deletePlanesBtn) { deletePlanesBtn.disabled = true; deletePlanesBtn.textContent = "Delete Selected"; }
+
+        setStatus(`IFC rendered locally (${fmt(info.elementCount)} elements). Click Run Estimate to calculate.`);
+      } catch (fallbackErr) {
+        if (token !== _previewToken || file !== currentFile) return;
+        cancelLoading();
+        const msg = fallbackErr?.message || "IFC render failed.";
+        setStatus(`IFC render failed: ${msg}`, true);
+        console.error(fallbackErr);
+      }
+    }
+    return;
+  }
 
   try {
-    const fd = new FormData();
-    fd.append("file", currentFile, currentFile.name);
-    const res     = await fetch(apiPath("/api/geometry"), { method: "POST", body: fd });
-    const payload = await res.json();
-    if (!res.ok) throw new Error(payload.detail || "Preview failed.");
-
-    finishLoading();
-
-    const info = viewer.loadGeometry(payload);
-
-    _lastPayload       = payload;
-    _methodsData       = payload.methods || null;
-    _activeMethod      = "default";
-    baseSurfaceArea    = payload.external_surface_sqft || 0;
-    removedSurfaceArea = 0;
-    viewer.loadSurfacePlanes(payload.surface_planes || []);
-    if (surfaceToggle) { surfaceToggle.dataset.on = "false"; surfaceToggle.textContent = "Show Surfaces"; }
-    viewer.setSurfacesVisible(false);
-    deletePlanesRow?.classList.add("hidden");
-    if (deletePlanesBtn) { deletePlanesBtn.disabled = true; deletePlanesBtn.textContent = "Delete Selected"; }
-    if (payload.type === "ifc" && surfaceAreaSection) {
-      surfaceAreaSection.classList.remove("hidden");
-      updateSurfaceArea();
-      _syncMethodBtns();
-    } else if (surfaceAreaSection) {
-      surfaceAreaSection.classList.add("hidden");
-    }
+    const info = await loadServerPreview(file, token);
+    if (token !== _previewToken || file !== currentFile) return;
 
     if (info.type === "dxf") {
-      setStatus(`${currentFile.name} loaded.`);
+      setStatus(`${file.name} loaded.`);
     } else {
       setStatus(`${info.groups} element group(s) loaded.`);
     }
@@ -229,6 +254,39 @@ async function loadPreview() {
     }
     console.error(err);
   }
+}
+
+async function loadServerPreview(file, token) {
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  const res = await fetch(apiPath("/api/geometry"), { method: "POST", body: fd });
+  const payload = await res.json();
+  if (!res.ok) throw new Error(payload.detail || "Preview failed.");
+  if (token !== _previewToken || file !== currentFile) return {};
+
+  finishLoading();
+
+  const info = viewer.loadGeometry(payload);
+
+  _lastPayload       = payload;
+  _methodsData       = payload.methods || null;
+  _activeMethod      = "default";
+  baseSurfaceArea    = payload.external_surface_sqft || 0;
+  removedSurfaceArea = 0;
+  viewer.loadSurfacePlanes(payload.surface_planes || []);
+  if (surfaceToggle) { surfaceToggle.dataset.on = "false"; surfaceToggle.textContent = "Show Surfaces"; }
+  viewer.setSurfacesVisible(false);
+  deletePlanesRow?.classList.add("hidden");
+  if (deletePlanesBtn) { deletePlanesBtn.disabled = true; deletePlanesBtn.textContent = "Delete Selected"; }
+  if (payload.type === "ifc" && surfaceAreaSection) {
+    surfaceAreaSection.classList.remove("hidden");
+    updateSurfaceArea();
+    _syncMethodBtns();
+  } else if (surfaceAreaSection) {
+    surfaceAreaSection.classList.add("hidden");
+  }
+
+  return info;
 }
 
 async function runEstimate() {
